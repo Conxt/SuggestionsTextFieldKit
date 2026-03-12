@@ -9,12 +9,14 @@ import AppKit
 import Foundation
 
 public class SuggestionsTextFieldDelegate: NSObject, NSTextFieldDelegate {
+    public var selectionColor: NSColor = .controlAccentColor
     public var suggestionsWindowController: SuggestionsWindowController? {
         didSet {
             suggestionsWindowController?.parentTextField = targetTextField
             suggestionsWindowController?.dataSource = suggestionsDataSource
             suggestionsWindowController?.selectionHandler = selectionHandler
             suggestionsWindowController?.confirmationHandler = confirmationHandler
+            suggestionsWindowController?.selectionColor = selectionColor
         }
     }
     public var suggestionsDataSource: SuggestionsDataSource? {
@@ -43,10 +45,6 @@ public class SuggestionsTextFieldDelegate: NSObject, NSTextFieldDelegate {
         }
 
         suggestionsDataSource?.inputString = control.stringValue
-
-        if !control.stringValue.isEmpty {
-            suggestionsWindowController?.enableSuggestions()
-        }
     }
 
     public func controlTextDidChange(_ notification: Notification) {
@@ -60,8 +58,10 @@ public class SuggestionsTextFieldDelegate: NSObject, NSTextFieldDelegate {
 
         if control.stringValue.isEmpty {
             suggestionsWindowController?.cancelSuggestions()
-        } else {
+        } else if suggestionsWindowController?.window?.isVisible != true {
             suggestionsWindowController?.enableSuggestions()
+        } else {
+            suggestionsWindowController?.repositionWindow()
         }
     }
 
@@ -82,6 +82,20 @@ public class SuggestionsTextFieldDelegate: NSObject, NSTextFieldDelegate {
             // Move down in the suggested selections list
             suggestionsWindowController?.moveDown(textView)
             return true
+        }
+
+        if commandSelector == #selector(NSResponder.moveRight(_:))
+            || commandSelector == #selector(NSResponder.insertTab(_:))
+            || commandSelector == #selector(NSResponder.insertNewline(_:))
+        {
+            if suggestionsWindowController?.window?.isVisible == true,
+               suggestionsWindowController?.selectedSuggestion != nil
+            {
+                suggestionsWindowController?.confirmationHandler?(
+                    suggestionsWindowController?.selectedSuggestion
+                )
+                return true
+            }
         }
 
         // This is "autocomplete" functionality, invoked when the user presses option-escaped.

@@ -15,23 +15,27 @@ public class SuggestionsWindowController: NSWindowController {
     public var parentTextField: NSTextField? = nil
     public var dataSource: SuggestionsDataSource? = nil {
         didSet {
+            if let observer = dataSourceObserver {
+                NotificationCenter.default.removeObserver(observer)
+                dataSourceObserver = nil
+            }
             guard let dataSource = dataSource else { return }
-            let notificationCenter = NotificationCenter.default
-            notificationCenter.removeObserver(
-                self, name: SuggestionsChangedNotificationName, object: oldValue
-            )
-            notificationCenter.addObserver(
+            dataSourceObserver = NotificationCenter.default.addObserver(
                 forName: SuggestionsChangedNotificationName,
                 object: dataSource,
                 queue: OperationQueue.current,
-                using: { notification in self.layoutSuggestions() }
+                using: { [weak self] _ in self?.layoutSuggestions() }
             )
-            layoutSuggestions()
+            if window?.isVisible == true {
+                layoutSuggestions()
+            }
         }
     }
+    private var dataSourceObserver: Any?
 
     // What to do when choice is made
     public var selectionHandler: (@Sendable (Suggestion?) -> ())?
+    public var selectionColor: NSColor = .controlAccentColor
     public var selectedSuggestion: Suggestion? {
         for viewController in viewControllers where selectedView == viewController.view {
             return viewController.representedObject as? Suggestion
@@ -40,15 +44,19 @@ public class SuggestionsWindowController: NSWindowController {
     }
     public var confirmationHandler: (@Sendable (Suggestion?) -> ())?
 
+    public var maxWindowHeight: CGFloat = 160
+
     private let kTrackerKey = "whichImageView"
 
     private(set) var viewControllers: [NSViewController] = []
     private var trackingAreas: [NSTrackingArea] = []
     private var localMouseDownEventMonitor: Any?
     private var lostFocusObserver: Any?
+    private var rowsView: NSView?
 
     private var selectedView: SuggestionView? {
         didSet {
+            selectedView?.selectionColor = selectionColor
             oldValue?.highlighted = false
             selectedView?.highlighted = true
             if let cell = self.parentTextField?.cell {
@@ -61,9 +69,28 @@ public class SuggestionsWindowController: NSWindowController {
         super.init(window:
             SuggestionsWindow(contentRect: .init(origin: .zero, size: .zero), defer: true)
         )
-        self.window?.contentView = SuggestionsWindowContentView()
-        self.window?.contentView?.autoresizesSubviews = false
         self.window?.isReleasedWhenClosed = false
+
+        let contentView = SuggestionsWindowContentView()
+        self.window?.contentView = contentView
+
+        let scrollView = NSScrollView()
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.borderType = .noBorder
+        scrollView.drawsBackground = false
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(scrollView)
+        NSLayoutConstraint.activate([
+            scrollView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            scrollView.topAnchor.constraint(equalTo: contentView.topAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+        ])
+
+        let rowsView = FlippedView()
+        scrollView.documentView = rowsView
+        self.rowsView = rowsView
     }
 
     required init?(coder: NSCoder) {
@@ -93,9 +120,6 @@ public class SuggestionsWindowController: NSWindowController {
     // Notice that there is no mouseDown: implementation. That is because the user may hold the
     // mouse down and drag into another view.
     public override func mouseUp(with theEvent: NSEvent) {
-        parentTextField?.validateEditing()
-        parentTextField?.abortEditing()
-        parentTextField?.sendAction(parentTextField?.action, to: parentTextField?.target)
         confirmationHandler?(selectedSuggestion)
         cancelSuggestions()
     }
@@ -171,6 +195,11 @@ public class SuggestionsWindowController: NSWindowController {
 
     private func userSetSelectedView(_ view: NSView?) {
         selectedView = view as? SuggestionView
+//        selectedView?.selectionColor = selectionColor
+        if let selectedView, let rowsView {
+            let rect = rowsView.convert(selectedView.bounds, from: selectedView)
+            rowsView.scrollToVisible(rect)
+        }
         if let handler = selectionHandler { handler(selectedSuggestion) }
     }
 
@@ -178,11 +207,15 @@ public class SuggestionsWindowController: NSWindowController {
 
     public func enableSuggestions() {
         repositionWindow()
-        layoutSuggestions()
 
         guard let suggestionsWindow = self.window as? SuggestionsWindow,
               let parentWindow = parentTextField?.window
         else { return }
+
+        guard suggestionsWindow.parent == nil else {
+            layoutSuggestions()
+            return
+        }
 
         // The height of the window will be adjusted in -layoutSuggestions.
         // add the suggestion window as a child window so that it plays nice with Expose
@@ -259,6 +292,8 @@ public class SuggestionsWindowController: NSWindowController {
                 self.cancelSuggestions()
             }
         )
+
+        layoutSuggestions()
     }
 
     public func repositionWindow() {
@@ -268,28 +303,40 @@ public class SuggestionsWindowController: NSWindowController {
               let suggestionsWindow = self.window as? SuggestionsWindow
         else { return }
 
-        // Make the menu extend 5 pixels out to the left and right of the search box. This
-        // makes the menu item icons align vertically with the search icon.
-        let horizontalNegativeInset: CGFloat = 5.0
         let parentFrame: NSRect = parentTextField.frame
-        var frame: NSRect = suggestionsWindow.frame
-        frame.size.width = parentFrame.size.width + (2 * horizontalNegativeInset)
 
-        // Place the suggestion window just underneath the text field and make it the same width as 
-        // the text field.
-        var location = parentSuperview.convert(parentFrame.origin, to: nil)
-        location = parentWindow.convertToScreen(
-            NSRect(
-                x: location.x - horizontalNegativeInset,
-                y: location.y,
-                width: 0,
-                height: 0
+        // y: align top of suggestions window with the bottom of the text field
+        let originInWindow = parentSuperview.convert(parentFrame.origin, to: nil)
+        let yOnScreen = parentWindow.convertToScreen(
+            NSRect(origin: originInWindow, size: .zero)
+        ).origin.y
+
+        // x: position at the last '/' character in the text field, falling back to the left edge
+        var xOnScreen = parentWindow.convertToScreen(
+            NSRect(origin: originInWindow, size: .zero)
+        ).origin.x
+        let text = parentTextField.stringValue
+        if let lastSlashRange = text.range(of: "/", options: .backwards),
+           let fieldEditor = parentTextField.currentEditor() as? NSTextView,
+           let layoutManager = fieldEditor.layoutManager,
+           let textContainer = fieldEditor.textContainer
+        {
+            let charIndex = text.distance(from: text.startIndex, to: lastSlashRange.upperBound)
+            let glyphRange = layoutManager.glyphRange(
+                forCharacterRange: NSRange(location: 0, length: charIndex),
+                actualCharacterRange: nil
             )
-        ).origin
+            let boundingRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+            let pointInFieldEditor = NSPoint(
+                x: boundingRect.maxX + fieldEditor.textContainerOrigin.x - 35.0,
+                y: 0
+            )
+            let pointInWindow = fieldEditor.convert(pointInFieldEditor, to: nil)
+            xOnScreen = parentWindow.convertToScreen(NSRect(origin: pointInWindow, size: .zero)).origin.x
+        }
 
-        // Nudge the suggestion list window down so that it does not overlap the parent view.
-        suggestionsWindow.setFrame(frame, display: false)
-        suggestionsWindow.setFrameTopLeftPoint(location)
+        suggestionsWindow.setFrame(suggestionsWindow.frame, display: false)
+        suggestionsWindow.setFrameTopLeftPoint(NSPoint(x: xOnScreen, y: yOnScreen))
     }
 
     // Order out the suggestion window, disconnect the accessibility logical relationship and 
@@ -307,6 +354,12 @@ public class SuggestionsWindowController: NSWindowController {
                     element: unignoredAccessibilityDescendant, notification: .uiElementDestroyed
                 )
             }
+
+            trackingAreas.forEach { rowsView?.removeTrackingArea($0) }
+            trackingAreas.removeAll()
+            viewControllers.forEach { $0.view.removeFromSuperview() }
+            viewControllers.removeAll()
+            selectedView = nil
 
             suggestionsWindow.parent?.removeChildWindow(suggestionsWindow)
             suggestionsWindow.orderOut(nil)
@@ -331,7 +384,7 @@ public class SuggestionsWindowController: NSWindowController {
         // the imageView without hit testing
         var trackerData: [AnyHashable: Any]? = nil
         if let view = view { trackerData = [kTrackerKey: view] }
-        let trackingRect = window!.contentView!.convert(view?.bounds ?? CGRect.zero, from: view)
+        let trackingRect = rowsView?.convert(view?.bounds ?? CGRect.zero, from: view) ?? .zero
         let trackingOptions: NSTrackingArea.Options = [
             .enabledDuringMouseDrag, .mouseEnteredAndExited, .activeInActiveApp
         ]
@@ -344,49 +397,75 @@ public class SuggestionsWindowController: NSWindowController {
     }
 
     private func layoutSuggestions() {
-        guard let suggestionsWindow = self.window as? SuggestionsWindow else { return }
-        let contentView = suggestionsWindow.contentView as? SuggestionsWindowContentView
-        // Remove any existing suggestion view and associated tracking area, set selection to nil
+        guard let suggestionsWindow = self.window as? SuggestionsWindow,
+              let rowsView = rowsView
+        else { return }
+
         selectedView = nil
         viewControllers.forEach { $0.view.removeFromSuperview() }
         viewControllers.removeAll()
-        trackingAreas.forEach { contentView?.removeTrackingArea($0) }
+        trackingAreas.forEach { rowsView.removeTrackingArea($0) }
         trackingAreas.removeAll()
 
-        // Iterate through each suggestion creating a view for each entry.
-        // The width of each suggestion view should match the width of the window.
-        var contentFrame = contentView?.frame
+        guard let suggestions = dataSource?.suggestions else { return }
+
+        if suggestions.isEmpty {
+            suggestionsWindow.contentView?.isHidden = true
+            return
+        }
+
+        suggestionsWindow.contentView?.isHidden = false
+
+        let newViewControllers: [SuggestionViewController] = suggestions.compactMap { entry in
+            let vc = SuggestionViewController()
+            vc.representedObject = entry
+            return vc
+        }
+
+        let maxLabelWidth = newViewControllers
+            .compactMap { $0.suggestionView?.label.intrinsicContentSize.width }
+            .max() ?? 0
+        let rowWidth = maxLabelWidth + 60
+
         let itemHeight: CGFloat = 20.0
         let topBottomMargin: CGFloat = 6.0
-        var frame = NSRect(
-            x: 0,
-            y: topBottomMargin - itemHeight,
-            width: contentFrame?.width ?? 0,
-            height: itemHeight
-        )
+        var yOffset = topBottomMargin
 
-        guard let suggestions = dataSource?.suggestions else { return }
-        // Offset the Y posistion so that the suggestion view does not try to draw past the rounded 
-        // corners.
-        for entry in suggestions {
-            frame.origin.y += frame.size.height
-            let viewController = SuggestionViewController()
+        for viewController in newViewControllers {
             guard let view = viewController.suggestionView else { continue }
-            view.frame = frame
-            contentView?.addSubview(view)
+//            view.selectionColor = selectionColor
+            rowsView.addSubview(view)
+            NSLayoutConstraint.activate([
+                view.leadingAnchor.constraint(equalTo: rowsView.leadingAnchor),
+                view.widthAnchor.constraint(equalToConstant: rowWidth),
+                view.topAnchor.constraint(equalTo: rowsView.topAnchor, constant: yOffset),
+                view.heightAnchor.constraint(equalToConstant: itemHeight),
+            ])
+            viewControllers.append(viewController)
+            yOffset += itemHeight
+        }
+
+        let totalContentHeight = yOffset + topBottomMargin
+        rowsView.frame = NSRect(x: 0, y: 0, width: rowWidth, height: totalContentHeight)
+        rowsView.layoutSubtreeIfNeeded()
+
+        for viewController in viewControllers.compactMap({ $0 as? SuggestionViewController }) {
+            guard let view = viewController.suggestionView else { continue }
             if let trackingArea = trackingArea(for: view) as? NSTrackingArea {
-                contentView?.addTrackingArea(trackingArea)
+                rowsView.addTrackingArea(trackingArea)
                 trackingAreas.append(trackingArea)
             }
-            viewController.representedObject = entry
-            viewControllers.append(viewController)
         }
-        // We have added all of the suggestion to the window. Now set the size of the window.
-        // Don’t forget to account for the extra room needed the rounded corners.
-        contentFrame?.size.height = frame.maxY + topBottomMargin
-        var winFrame: NSRect = NSRect(origin: window!.frame.origin, size: window!.frame.size)
-        winFrame.origin.y = winFrame.maxY - contentFrame!.height
-        winFrame.size.height = contentFrame!.height
+
+        let windowHeight = min(totalContentHeight, maxWindowHeight)
+        var winFrame = window!.frame
+        winFrame.origin.y = winFrame.maxY - windowHeight
+        winFrame.size.height = windowHeight
+        winFrame.size.width = rowWidth
         window?.setFrame(winFrame, display: true)
     }
+}
+
+private class FlippedView: NSView {
+    override var isFlipped: Bool { true }
 }

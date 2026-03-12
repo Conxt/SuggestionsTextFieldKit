@@ -1,6 +1,6 @@
 //
 //  SuggestionView.swift
-//  
+//
 //
 //  Created by Claudio Cambra on 2/4/24.
 //
@@ -10,19 +10,27 @@ import Foundation
 
 class SuggestionView: NSView {
     let highlightSideMargin: CGFloat = 6.0
-    let sideMargin: CGFloat = 8.0
+    let sideMargin: CGFloat = 7.0
     let imageSize: CGFloat = 16.0
     let spaceBetweenLabelAndImage: CGFloat = 6.0
 
     var imageView: NSImageView!
-    var backgroundView: NSVisualEffectView!
+    var backgroundView: NSView!
     var label: NSTextField!
+    var selectionColor: NSColor = .controlAccentColor
 
     var highlighted: Bool = false {
         didSet {
-            backgroundView.material = highlighted ? .selection : .menu
-            backgroundView.isEmphasized = highlighted
-            backgroundView.state = highlighted ? .active : .inactive
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            if highlighted {
+                effectiveAppearance.performAsCurrentDrawingAppearance {
+                    self.backgroundView.layer?.backgroundColor = selectionColor.cgColor
+                }
+            } else {
+                backgroundView.layer?.backgroundColor = NSColor.clear.cgColor
+            }
+            CATransaction.commit()
             label.cell?.backgroundStyle = highlighted ? .emphasized : .normal
             imageView.cell?.backgroundStyle = highlighted ? .emphasized : .normal
         }
@@ -30,48 +38,41 @@ class SuggestionView: NSView {
 
     init() {
         super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
 
-        backgroundView = NSVisualEffectView()
+        backgroundView = NSView()
         backgroundView.translatesAutoresizingMaskIntoConstraints = false
-
+        backgroundView.wantsLayer = true
+        backgroundView.layer?.cornerRadius = 4.0
+        backgroundView.layer?.backgroundColor = NSColor.clear.cgColor
         addSubview(backgroundView)
         addConstraints([
-            backgroundView.leadingAnchor.constraint(
-                equalTo: leadingAnchor, constant: highlightSideMargin
-            ),
-            backgroundView.trailingAnchor.constraint(
-                equalTo: trailingAnchor, constant: 0.0 - highlightSideMargin
-            ),
+            backgroundView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: highlightSideMargin),
+            backgroundView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -highlightSideMargin),
             backgroundView.topAnchor.constraint(equalTo: topAnchor),
             backgroundView.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
 
         imageView = NSImageView()
         imageView.translatesAutoresizingMaskIntoConstraints = false
-        backgroundView.addSubview(imageView)
-        backgroundView.addConstraints([
-            imageView.leadingAnchor.constraint(equalTo: backgroundView.leadingAnchor, constant: sideMargin),
-            imageView.centerYAnchor.constraint(equalTo: backgroundView.centerYAnchor),
+        imageView.contentTintColor = NSColor.labelColor
+        addSubview(imageView)
+        addConstraints([
+            imageView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: highlightSideMargin + sideMargin),
+            imageView.centerYAnchor.constraint(equalTo: centerYAnchor),
             imageView.widthAnchor.constraint(equalToConstant: imageSize),
             imageView.heightAnchor.constraint(equalToConstant: imageSize),
         ])
 
-        if #available(macOS 10.14, *) {
-            imageView.contentTintColor = NSColor.labelColor
-        }
-
         label = NSTextField(labelWithString: "")
         label.translatesAutoresizingMaskIntoConstraints = false
         label.lineBreakMode = .byTruncatingTail
-        backgroundView.addSubview(label)
-        backgroundView.addConstraints([
-            label.leadingAnchor.constraint(
-                equalTo: imageView.trailingAnchor, constant: spaceBetweenLabelAndImage
-            ),
-            label.trailingAnchor.constraint(
-                equalTo: backgroundView.trailingAnchor, constant: 0.0 - sideMargin
-            ),
-            label.centerYAnchor.constraint(equalTo: backgroundView.centerYAnchor),
+        label.font = NSFont.systemFont(ofSize: 12)
+        addSubview(label)
+        addConstraints([
+            label.leadingAnchor.constraint(equalTo: imageView.trailingAnchor, constant: spaceBetweenLabelAndImage),
+            label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -(highlightSideMargin + sideMargin)),
+            label.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
     }
 

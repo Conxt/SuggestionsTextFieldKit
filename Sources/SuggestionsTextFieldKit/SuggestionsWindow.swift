@@ -30,7 +30,7 @@ class SuggestionsWindow: NSWindow {
             defer: flag
         )
 
-        hasShadow = true
+        hasShadow = false
         backgroundColor = NSColor.clear
         isOpaque = false
     }

@@ -30,7 +30,7 @@ class SuggestionViewController: NSViewController {
             else { return }
 
             view.label.stringValue = representedObject.displayText
-            view.imageView.image = NSImage(named: representedObject.imageName)
+            view.imageView.image = NSImage(systemSymbolName: representedObject.imageName, accessibilityDescription: nil)
         }
     }
 }

@@ -9,7 +9,7 @@ import AppKit
 import Foundation
 
 class SuggestionsWindowContentView: NSView {
-    var cornerRadius: CGFloat = 8.0
+    var cornerRadius: CGFloat = 6.0
 
     required init?(coder decoder: NSCoder) {
         super.init(coder: decoder)
@@ -17,10 +17,13 @@ class SuggestionsWindowContentView: NSView {
 
     override init(frame: NSRect) {
         super.init(frame: frame)
+        wantsLayer = true
+        layer?.cornerRadius = cornerRadius
+        layer?.masksToBounds = true
 
         let visualEffectView = NSVisualEffectView()
         visualEffectView.translatesAutoresizingMaskIntoConstraints = false
-        visualEffectView.blendingMode = .withinWindow
+        visualEffectView.blendingMode = .behindWindow
         visualEffectView.material = .menu
         visualEffectView.state = .active
 
@@ -34,12 +37,8 @@ class SuggestionsWindowContentView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        let cornerRadius: CGFloat = cornerRadius
-        let borderPath = NSBezierPath(
-            roundedRect: bounds, xRadius: cornerRadius, yRadius: cornerRadius
-        )
         NSColor.windowBackgroundColor.setFill()
-        borderPath.fill()
+        NSBezierPath(roundedRect: bounds, xRadius: cornerRadius, yRadius: cornerRadius).fill()
     }
 
     override var isFlipped: Bool {
