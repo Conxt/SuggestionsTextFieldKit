@@ -58,7 +58,7 @@ class SuggestionView: NSView {
         imageView.contentTintColor = NSColor.labelColor
         addSubview(imageView)
         addConstraints([
-            imageView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: highlightSideMargin + sideMargin),
+            imageView.leftAnchor.constraint(equalTo: leftAnchor, constant: highlightSideMargin + sideMargin),
             imageView.centerYAnchor.constraint(equalTo: centerYAnchor),
             imageView.widthAnchor.constraint(equalToConstant: imageSize),
             imageView.heightAnchor.constraint(equalToConstant: imageSize),
@@ -68,10 +68,11 @@ class SuggestionView: NSView {
         label.translatesAutoresizingMaskIntoConstraints = false
         label.lineBreakMode = .byTruncatingTail
         label.font = NSFont.systemFont(ofSize: 12)
+        label.alignment = .left
         addSubview(label)
         addConstraints([
-            label.leadingAnchor.constraint(equalTo: imageView.trailingAnchor, constant: spaceBetweenLabelAndImage),
-            label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -(highlightSideMargin + sideMargin)),
+            label.leftAnchor.constraint(equalTo: imageView.rightAnchor, constant: spaceBetweenLabelAndImage),
+            label.rightAnchor.constraint(equalTo: rightAnchor, constant: -(highlightSideMargin + sideMargin)),
             label.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
     }

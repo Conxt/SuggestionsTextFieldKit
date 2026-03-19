@@ -74,7 +74,7 @@ public class SuggestionsWindowController: NSWindowController {
         let contentView = SuggestionsWindowContentView()
         self.window?.contentView = contentView
 
-        let scrollView = NSScrollView()
+        let scrollView = LTRScrollView()
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
         scrollView.borderType = .noBorder
@@ -468,4 +468,22 @@ public class SuggestionsWindowController: NSWindowController {
 
 private class FlippedView: NSView {
     override var isFlipped: Bool { true }
+}
+
+private class LTRScrollView: NSScrollView {
+    override func tile() {
+        super.tile()
+        guard let vs = verticalScroller, vs.frame.origin.x < bounds.midX else { return }
+        let scrollerWidth = vs.frame.width
+        vs.frame.origin.x = bounds.width - scrollerWidth
+        if vs.scrollerStyle == .legacy {
+            contentView.frame = NSRect(
+                x: 0,
+                y: contentView.frame.origin.y,
+                width: bounds.width - scrollerWidth,
+                height: contentView.frame.height
+            )
+        }
+        contentView.setBoundsOrigin(NSPoint(x: 0, y: contentView.bounds.origin.y))
+    }
 }
