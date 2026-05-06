@@ -10,6 +10,7 @@ import Foundation
 
 public class SuggestionsTextFieldDelegate: NSObject, NSTextFieldDelegate {
     public var selectionColor: NSColor = .controlAccentColor
+    public var alignTop: Bool = false
     public var suggestionsWindowController: SuggestionsWindowController? {
         didSet {
             suggestionsWindowController?.parentTextField = targetTextField
@@ -59,9 +60,9 @@ public class SuggestionsTextFieldDelegate: NSObject, NSTextFieldDelegate {
         if control.stringValue.isEmpty {
             suggestionsWindowController?.cancelSuggestions()
         } else if suggestionsWindowController?.window?.isVisible != true {
-            suggestionsWindowController?.enableSuggestions()
+            suggestionsWindowController?.enableSuggestions(alignTop: alignTop)
         } else {
-            suggestionsWindowController?.repositionWindow()
+            suggestionsWindowController?.repositionWindow(alignTop: alignTop)
         }
     }
 
@@ -105,7 +106,7 @@ public class SuggestionsTextFieldDelegate: NSObject, NSTextFieldDelegate {
             if suggestionsWindowController?.window?.isVisible == true {
                 suggestionsWindowController?.cancelSuggestions()
             } else {
-                suggestionsWindowController?.enableSuggestions()
+                suggestionsWindowController?.enableSuggestions(alignTop: alignTop)
             }
             return true
         }

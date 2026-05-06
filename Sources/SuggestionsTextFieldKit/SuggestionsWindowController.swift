@@ -177,7 +177,12 @@ public class SuggestionsWindowController: NSWindowController {
             }
             previousView = view
         }
-        if viewWasSelected { userSetSelectedView(previousView) }
+        if viewWasSelected {
+            userSetSelectedView(previousView)
+        } else if let lastView = viewControllers.last?.view, let rowsView {
+            userSetSelectedView(lastView)
+            rowsView.scroll(NSPoint(x: 0, y: rowsView.bounds.maxY))
+        }
     }
 
     // Move the selection down and send action.
@@ -205,8 +210,8 @@ public class SuggestionsWindowController: NSWindowController {
 
     // MARK: - Handling of window relative to textfield
 
-    public func enableSuggestions() {
-        repositionWindow()
+    public func enableSuggestions(alignTop: Bool) {
+        repositionWindow(alignTop: alignTop)
 
         guard let suggestionsWindow = self.window as? SuggestionsWindow,
               let parentWindow = parentTextField?.window
@@ -296,7 +301,7 @@ public class SuggestionsWindowController: NSWindowController {
         layoutSuggestions()
     }
 
-    public func repositionWindow() {
+    public func repositionWindow(alignTop: Bool) {
         guard let parentTextField = parentTextField,
               let parentSuperview = parentTextField.superview,
               let parentWindow = parentTextField.window,
@@ -309,7 +314,7 @@ public class SuggestionsWindowController: NSWindowController {
         let originInWindow = parentSuperview.convert(parentFrame.origin, to: nil)
         let yOnScreen = parentWindow.convertToScreen(
             NSRect(origin: originInWindow, size: .zero)
-        ).origin.y
+        ).origin.y + (alignTop ? 24 : 0)
 
         // x: position at the last '/' character in the text field, falling back to the left edge
         var xOnScreen = parentWindow.convertToScreen(
@@ -336,7 +341,11 @@ public class SuggestionsWindowController: NSWindowController {
         }
 
         suggestionsWindow.setFrame(suggestionsWindow.frame, display: false)
-        suggestionsWindow.setFrameTopLeftPoint(NSPoint(x: xOnScreen, y: yOnScreen))
+        if alignTop {
+            suggestionsWindow.setFrameOrigin(NSPoint(x: xOnScreen, y: yOnScreen))
+        } else {
+            suggestionsWindow.setFrameTopLeftPoint(NSPoint(x: xOnScreen, y: yOnScreen))
+        }
     }
 
     // Order out the suggestion window, disconnect the accessibility logical relationship and 
